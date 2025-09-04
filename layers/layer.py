@@ -120,6 +120,8 @@ class Layer():
         new_value = getattr(sample, field)
         if new_value == None:
             new_value = 0
+        elif type(new_value) == DNSQR:
+            pass
         elif type(new_value) != int:
             new_value = new_value._fix()
 
