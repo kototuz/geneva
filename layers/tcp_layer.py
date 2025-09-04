@@ -138,14 +138,7 @@ class TCPLayer(Layer):
         Generates a random set of flags. 50% of the time it picks randomly from
         a list of real flags, otherwise it returns fuzzed flags.
         """
-        if random.random() < 0.5:
-            return random.choice(['S', 'A', 'SA', 'PA', 'FA', 'R', 'P', 'F', 'RA', ''])
-        else:
-            sample = fuzz(self.protocol())
-            # Since scapy lazily evaluates fuzzing, we first must set a
-            # legitimate value for scapy to evaluate what combination of flags it is
-            sample.flags = sample.flags
-            return str(sample.flags)
+        return random.choice(['S', 'A', 'SA', 'PA', 'FA', 'R', 'P', 'F', 'RA', ''])
 
     def get_options(self, field):
         """
