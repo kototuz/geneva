@@ -1,3 +1,5 @@
+#!.venv/bin/python3
+
 """
 Main evolution driver for Geneva (GENetic EVAsion). This file performs the genetic algorithm,
 and relies on the evaluator (evaluator.py) to provide fitness evaluations of each individual.
@@ -79,30 +81,6 @@ def setup_logger(log_level):
     logger.addHandler(file_handler)
     return logger
 
-
-def collect_plugin_args(cmd, plugin, plugin_type, message=None):
-    """
-    Collects and prints arguments for a given plugin.
-
-    Args:
-        cmd (list): sys.argv or a list of args to parse
-        plugin (str): Name of plugin to import ("http")
-        plugin_type (str): Component of plugin to import ("client")
-        message (str): message to override for printing
-    """
-    if not message:
-        message = plugin_type
-    try:
-        _, cls = actions.utils.import_plugin(plugin, plugin_type)
-        print("\n\n")
-        print("=" * int(COLUMNS))
-        print("Options for --test-type %s %s" % (plugin, message))
-        cls.get_args(cmd)
-    # Catch SystemExit here, as this is what argparse raises when --help is passed
-    except (SystemExit, Exception):
-        pass
-
-
 def get_args(cmd):
     """
     Sets up argparse and collects arguments.
@@ -113,9 +91,7 @@ def get_args(cmd):
     Returns:
         namespace: Parsed arguments
     """
-    parser = argparse.ArgumentParser(description='Genetic algorithm for evolving censorship evasion.\n\nevolve.py uses a pass-through argument system to pass the command line arguments through different files in the system, including the evaluator (evaluator.py) and a given plugin (plugins/). --help will collect all these arguments.', add_help=False, prog="evolve.py")
-
-    parser.add_argument('--test-type', action='store', choices=actions.utils.get_plugins(), default="http", help="plugin to launch")
+    parser = argparse.ArgumentParser(description="Genetic algorithm for evolving censorship evasion", add_help=False)
 
     # Add help message separately so we can collect the help messages of all of the other parsers
     parser.add_argument('-h', '--help', action='store_true', default=False, help='print this help message and exit')
@@ -136,8 +112,10 @@ def get_args(cmd):
     # Options to evaluate and exit, skip evaluation, and to specify the type of test
     evaluation_group = parser.add_argument_group('control aspects of strategy evaluation')
     evaluation_group.add_argument('--eval-only', action='store', default=None, help='only evaluate fitness for a given strategy or file of strategies')
-    evaluation_group.add_argument('--no-eval', action='store_true', help="Disable evaluator for debugging")
     evaluation_group.add_argument('--runs', action='store', type=int, default=1, help='number of times each strategy should be run for one evaluation (default 1, fitness is averaged).')
+
+    evaluator_group = parser.add_argument_group('control aspects of evaluator')
+    evaluator_group.add_argument('--test-request', action='store', default="https://google.com", help="test request that will be used by evaluator")
 
     # Hyperparameters for genetic algorithm
     genetic_group = parser.add_argument_group('control aspects of the genetic algorithm')
@@ -164,11 +142,6 @@ def get_args(cmd):
     logging_group.add_argument('--no-print-hall', action='store_true', help="does not print hall of fame at the end")
     logging_group.add_argument('--graph-trees', action='store_true', default=False, help='graph trees in addition to outputting to screen')
 
-    # Misc
-    usage_group = parser.add_argument_group('misc usage')
-    usage_group.add_argument('--no-lock-file', default=(os.name == "posix"), action='store_true', help="does not use /lock_file.txt")
-    usage_group.add_argument('--force-cleanup', action='store_true', default=False, help='cleans up all docker containers and networks after evolution')
-
     if not cmd:
         parser.error("No arguments specified")
 
@@ -179,13 +152,6 @@ def get_args(cmd):
     if args.help:
         parser.print_help()
         print(epilog)
-        print("=" * int(COLUMNS))
-        print("\nevolve.py uses a pass-through argument system to evaluator.py and other parts of Geneva. These arguments are below.\n\n")
-        evaluator.get_arg_parser(cmd).print_help()
-        if args.test_type:
-            collect_plugin_args(cmd, args.test_type, "plugin", message="parent plugin")
-            collect_plugin_args(cmd, args.test_type, "client")
-            collect_plugin_args(cmd, args.test_type, "server")
         raise SystemExit
     return args
 
@@ -588,15 +554,6 @@ def genetic_solve(logger, options, ga_evaluator):
             ga_evaluator.stop = True
         logger.info("")
 
-    finally:
-        if options["force_cleanup"]:
-            # Try to clean up any hanging docker containers/networks from the run
-            logger.warning("Cleaning up docker...")
-            try:
-                sp.check_call("docker stop $(docker ps -aq) > /dev/null 2>&1", shell=True)
-            except sp.CalledProcessError:
-                pass
-
     return hall
 
 
@@ -718,55 +675,13 @@ def restrict_headers(logger, protos, filter_fields, disabled_fields):
 
     layers.packet.Packet.restrict_fields(logger, protos, filter_fields, disabled_fields)
 
-
-def driver(cmd):
-    """
-    Main workflow driver for the solver. Parses flags and input data, and initiates solving.
-
-    Args:
-        cmd (list): sys.argv or a list of arguments
-
-    Returns:
-        dict: Hall of fame of individuals
-    """
-    # Parse the given arguments
+def main(cmd):
     args = get_args(cmd)
-
     logger = setup_logger(args.log)
-
-    lock_file_path = "/lock_file.txt"
-    if not args.no_lock_file and os.path.exists(lock_file_path):
-        logger.info("Lock file \"%s\" already exists.", lock_file_path)
-        return None
-
-    try:
-        if not args.no_lock_file:
-            # Create lock file to prevent interference between multiple runs
-            open(lock_file_path, "w+")
-
-        # Log the command run
-        logger.debug("Launching strategy evolution: %s", " ".join(cmd))
-        logger.info("Logging results to %s", logger.ga_log_dir)
-
-        if args.no_eval and args.eval_only:
-            print("ERROR: Cannot --eval-only with --no-eval.")
-            return None
-
-        requested_strategy = args.eval_only
-
-        # Define an evaluator for this session
-        ga_evaluator = None
-        if not args.no_eval:
-            cmd += ["--output-directory", actions.utils.RUN_DIRECTORY]
-            ga_evaluator = evaluator.Evaluator(cmd, logger)
-
-        # Check if the user only wanted to evaluate a single given strategy
-        # If so, evaluate it, and exit
-        if requested_strategy or requested_strategy == "":
-            # Disable evaluator empty strategy skipping
-            ga_evaluator.skip_empty = False
-            eval_only(logger, requested_strategy, ga_evaluator, runs=args.runs)
-            return None
+    with evaluator.Evaluator(logger, args.test_request) as ga_evaluator:
+        if args.eval_only or args.eval_only == "":
+            eval_only(logger, args.eval_only, ga_evaluator, runs=args.runs)
+            return
 
         restrict_headers(logger, args.protos, args.fields, args.disable_fields)
 
@@ -774,10 +689,9 @@ def driver(cmd):
         if args.fix_trigger:
             actions.trigger.FIXED_TRIGGER = actions.trigger.Trigger.parse(args.fix_trigger)
 
-        requested_seed = args.seed
-        if requested_seed or requested_seed == "":
+        if args.seed or args.seed == "":
             try:
-                requested_seed = actions.utils.parse(args.seed, logger)
+                actions.utils.parse(args.seed, logger)
             except (TypeError, AssertionError, actions.tree.ActionTreeParseError):
                 logger.error("Failed to parse given strategy: %s", requested_seed)
                 raise
@@ -790,7 +704,6 @@ def driver(cmd):
         options["in-trees"] = args.in_trees
         options["in-actions"] = args.in_actions
         options["out-actions"] = args.out_actions
-        options["force_cleanup"] = args.force_cleanup
         options["num_generations"] = args.generations
         options["seed"] = args.seed
         options["elite_clones"] = args.elite_clones
@@ -814,22 +727,10 @@ def driver(cmd):
             hall_of_fame = genetic_solve(logger, options, ga_evaluator)
         except KeyboardInterrupt:
             logger.info("User shutdown requested.")
-        if ga_evaluator:
-            ga_evaluator.shutdown()
 
         if hall_of_fame and not args.no_print_hall:
             # Print the final results
             print_results(hall_of_fame, logger)
 
-        # Teardown the evaluator if needed
-        if ga_evaluator:
-            ga_evaluator.shutdown()
-    finally:
-        # Remove lock file
-        if os.path.exists(lock_file_path):
-            os.remove(lock_file_path)
-    return hall_of_fame
-
-
 if __name__ == "__main__":
-    driver(sys.argv[1:])
+    main(sys.argv[1:])

@@ -17,8 +17,6 @@ import struct
 import actions.action
 import actions.trigger
 import layers.packet
-import plugins.plugin_client
-import plugins.plugin_server
 
 from scapy.all import TCP, IP, UDP, rdpcap
 import netifaces
