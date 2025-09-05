@@ -48,8 +48,8 @@ def setup_logger(log_level):
     ga_debug_log = os.path.join(ga_log_dir, "ga_debug.log")
 
     # Configure logging globally
-    formatter = logging.Formatter(fmt='%(asctime)s %(levelname)s:%(message)s', datefmt="%Y-%m-%d %H:%M:%S")
-    logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s', datefmt="%Y-%m-%d %H:%M:%S")
+    formatter = logging.Formatter(fmt='[%(levelname)s] %(message)s')
+    logging.basicConfig(format='[%(levelname)s] %(message)s')
 
     # Set up the root logger
     logger = logging.getLogger("ga_%s" % actions.utils.RUN_DIRECTORY)

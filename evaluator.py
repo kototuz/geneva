@@ -19,6 +19,7 @@ class Evaluator:
     def __init__(self, logger, test_request):
         self.test_request = test_request
         self.logger = logger
+        self.logger.info("Evaluator test request: %s", test_request)
         self.packet_handler = PacketHandler(logger)
 
     def __enter__(self):
@@ -33,28 +34,27 @@ class Evaluator:
     def evaluate(self, population):
         for ind in population:
             self.packet_handler.strategy = ind
-            self.logger.info("Evaluating %s", str(ind))
-            self.logger.info("Request: %s", self.test_request)
+            self.logger.info("Evaluating %s...", str(ind))
             try:
                 fitness = 0
                 res = requests.get(self.test_request, timeout=3)
-                self.logger.info("Response code: %d", res.status_code)
+                self.logger.info("    Response code: %d", res.status_code)
                 if res.status_code == 200:
                     fitness += 100
             except requests.exceptions.ConnectTimeout:
-                self.logger.info("Timeout")
+                self.logger.info("    Timeout")
                 fitness -= 100
             except (requests.exceptions.ConnectionError, ConnectionResetError):
-                self.logger.info("Connection RST")
+                self.logger.info("    Connection RST")
                 fitness -= 90
             except urllib.error.URLError as exc:
                 self.logger.info(exc)
                 fitness -= 101
             except (requests.exceptions.Timeout, requests.exceptions.HTTPError) as exc:
-                self.logger.info(exc)
+                self.logger.info("    Failed: %s", exc)
                 fitness -= 120
             except Exception as e:
-                self.logger.info("Request failed: %s", str(e))
+                self.logger.info("    Request failed: %s", str(e))
                 fitness -= 100
             finally:
                 ind.fitness = fitness * 4
