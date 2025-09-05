@@ -91,12 +91,15 @@ class PacketHandler(Thread):
         self.logger.debug("Outbound packet %s", str(packet))
         nfpacket.drop()
 
-        new_packets = self.strategy.act_on_packet(packet, self.logger, direction="out")
-        for p in new_packets:
-            if p.sleep:
-                Thread(target=self.delayed_send, args=(p.packet, p.sleep)).start()
-            else:
-                self.socket.send(p.packet)
+        try:
+            new_packets = self.strategy.act_on_packet(packet, self.logger, direction="out")
+            for p in new_packets:
+                if p.sleep:
+                    Thread(target=self.delayed_send, args=(p.packet, p.sleep)).start()
+                else:
+                    self.socket.send(p.packet)
+        except Exception as e:
+            self.logger.error("Applying strategy failed: %s", str(e))
 
     def delayed_send(self, packet, delay):
         self.logger.info("Sleeping for %fs", delay)
