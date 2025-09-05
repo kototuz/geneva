@@ -14,8 +14,6 @@ from layers.packet import Packet
 socket.setdefaulttimeout(1)
 
 class Evaluator:
-    QUEUE_NUM = 200
-
     def __init__(self, logger, test_request):
         self.test_request = test_request
         self.logger = logger
@@ -23,13 +21,11 @@ class Evaluator:
         self.packet_handler = PacketHandler(logger)
 
     def __enter__(self):
-        os.system(f"iptables -A OUTPUT -p tcp -j NFQUEUE --queue-num {self.QUEUE_NUM}")
         self.packet_handler.start()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.packet_handler.shutdown()
-        os.system("iptables -D OUTPUT 1")
 
     def evaluate(self, population):
         for ind in population:
@@ -65,6 +61,8 @@ class Evaluator:
         assert 0, "Not implemented"
 
 class PacketHandler(Thread):
+    QUEUE_NUM = 200
+
     def __init__(self, logger):
         super().__init__()
         self.logger = logger
@@ -78,12 +76,17 @@ class PacketHandler(Thread):
                 socket.AF_UNIX,
                 socket.SOCK_STREAM)
 
+    def start(self):
+        os.system(f"iptables -A OUTPUT -p tcp -j NFQUEUE --queue-num {self.QUEUE_NUM}")
+        super().start()
+
     def shutdown(self):
         self.stop = True
         self.join()
         self.nfqueue.unbind()
         self.nfqueue_socket.close()
         self.socket.close()
+        os.system("iptables -D OUTPUT 1")
         self.logger.info("Packet handler stopped")
 
     def handle_packet(self, nfpacket):
