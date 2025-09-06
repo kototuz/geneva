@@ -115,7 +115,7 @@ def get_args(cmd):
     evaluation_group.add_argument('--runs', action='store', type=int, default=1, help='number of times each strategy should be run for one evaluation (default 1, fitness is averaged).')
 
     evaluator_group = parser.add_argument_group('control aspects of evaluator')
-    evaluator_group.add_argument('--test-request', action='store', default="https://google.com", help="test request that will be used by evaluator")
+    evaluator_group.add_argument('--test-requests', action='store', default="https://google.com", help="test request that will be used by evaluator")
 
     # Hyperparameters for genetic algorithm
     genetic_group = parser.add_argument_group('control aspects of the genetic algorithm')
@@ -677,8 +677,9 @@ def restrict_headers(logger, protos, filter_fields, disabled_fields):
 
 def main(cmd):
     args = get_args(cmd)
+    test_requests = args.test_requests.split(",")
     logger = setup_logger(args.log)
-    with evaluator.Evaluator(logger, args.test_request) as ga_evaluator:
+    with evaluator.Evaluator(logger, test_requests) as ga_evaluator:
         if args.eval_only or args.eval_only == "":
             eval_only(logger, args.eval_only, ga_evaluator, runs=args.runs)
             return
