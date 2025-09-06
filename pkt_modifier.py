@@ -1,12 +1,18 @@
+#!.venv/bin/python3
+
 import os
+import sys
 import time
 import socket
+import logging
+import argparse
 from threading import Thread
 from netfilterqueue import NetfilterQueue
 from scapy.layers.inet import IP
 from scapy.config import conf
 
 import actions
+import actions.strategy
 from layers.packet import Packet
 
 socket.setdefaulttimeout(1)
@@ -74,3 +80,33 @@ class IptablesRule:
     def __init__(self, create_cmd, delete_cmd):
         self.create_cmd = create_cmd
         self.delete_cmd = delete_cmd
+
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(prog="Packet Modifier", description="Modifies packets applying specified strategy")
+    parser.add_argument("strategy")
+    parser.add_argument("--log", default="info", help="log level")
+    args = parser.parse_args(sys.argv[1:])
+
+    log_lvls = {"INFO": logging.INFO, "DEBUG": logging.DEBUG, "ERROR": logging.ERROR}
+    logging.basicConfig(format="[%(levelname)s] %(message)s", level=log_lvls[args.log.upper()])
+    logger = logging.getLogger();
+
+    queue_num = 200
+    rule = IptablesRule(f"iptables -t mangle -I POSTROUTING 1 -o enp3s0 -p tcp -m multiport --dports 80,443 -m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 1:6 -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num {queue_num} --queue-bypass", "iptables -t mangle -D POSTROUTING 1")
+    pm = PacketModifier(logger, rule, queue_num)
+
+    strategy = actions.utils.parse(args.strategy, logger)
+    pm.strategy = strategy
+
+    try:
+        pm.start()
+        while True:
+            pass
+    except Exception as e:
+        logger.error("Packet modifier: %s", e)
+    except KeyboardInterrupt:
+        print()
+    finally:
+        pm.shutdown()
