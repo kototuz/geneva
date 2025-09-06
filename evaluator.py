@@ -14,10 +14,13 @@ from layers.packet import Packet
 socket.setdefaulttimeout(1)
 
 class Evaluator:
+    QUEUE_NUM = 200
+
     def __init__(self, logger, test_requests):
         self.test_requests = test_requests
         self.logger = logger
-        self.packet_handler = PacketHandler(logger)
+        rule = IptablesRule(f"iptables -A OUTPUT -p tcp -j NFQUEUE --queue-num {self.QUEUE_NUM}", "iptables -D OUTPUT 1")
+        self.packet_handler = PacketHandler(logger, rule, self.QUEUE_NUM)
 
     def __enter__(self):
         self.packet_handler.start()
@@ -62,15 +65,14 @@ class Evaluator:
         assert 0, "Not implemented"
 
 class PacketHandler(Thread):
-    QUEUE_NUM = 200
-
-    def __init__(self, logger):
+    def __init__(self, logger, iptables_rule, queue_num):
         super().__init__()
+        self.iptables_rule = iptables_rule
         self.logger = logger
         self.strategy = actions.strategy.Strategy([], [])
         self.stop = False
         self.nfqueue = NetfilterQueue()
-        self.nfqueue.bind(200, self.handle_packet)
+        self.nfqueue.bind(queue_num, self.handle_packet)
         self.socket = conf.L3socket(iface=actions.utils.get_interface())
         self.nfqueue_socket = socket.fromfd(
                 self.nfqueue.get_fd(),
@@ -78,7 +80,7 @@ class PacketHandler(Thread):
                 socket.SOCK_STREAM)
 
     def start(self):
-        os.system(f"iptables -A OUTPUT -p tcp -j NFQUEUE --queue-num {self.QUEUE_NUM}")
+        os.system(self.iptables_rule.create_cmd)
         super().start()
 
     def shutdown(self):
@@ -87,7 +89,7 @@ class PacketHandler(Thread):
         self.nfqueue.unbind()
         self.nfqueue_socket.close()
         self.socket.close()
-        os.system("iptables -D OUTPUT 1")
+        os.system(self.iptables_rule.delete_cmd)
         self.logger.info("Packet handler stopped")
 
     def handle_packet(self, nfpacket):
@@ -120,3 +122,8 @@ class PacketHandler(Thread):
                     pass
         except Exception as e:
             raise e
+
+class IptablesRule:
+    def __init__(self, create_cmd, delete_cmd):
+        self.create_cmd = create_cmd
+        self.delete_cmd = delete_cmd
